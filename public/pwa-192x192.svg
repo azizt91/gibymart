@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" fill="none">
+  <rect width="192" height="192" rx="44" fill="#1E3A5F" />
+  <rect x="24" y="24" width="144" height="144" rx="32" fill="#3B82F6" opacity="0.9" />
+  <!-- Shopping Bag / Store Icon -->
+  <path d="M64 74C64 56.3269 78.3269 42 96 42C113.673 42 128 56.3269 128 74" stroke="white" stroke-width="9" stroke-linecap="round" />
+  <rect x="52" y="74" width="88" height="76" rx="18" fill="white" />
+  <!-- Checkmark Badge -->
+  <circle cx="96" cy="112" r="22" fill="#10B981" />
+  <path d="M89 112L94 117L103 107" stroke="white" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
