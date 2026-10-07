@@ -300,6 +300,7 @@ export const employeeAPI = {
         employee_code: code,
         name: formData.name?.trim(),
         hourly_rate: Number(formData.hourlyRate) || 10000,
+        meal_allowance: mealAllowance,
         status: formData.status || 'AKTIF',
         pin: formData.pin ? String(formData.pin).trim() : '1234',
       };
@@ -316,7 +317,7 @@ export const employeeAPI = {
 
       if (error) throw error;
 
-      // Persist meal allowance
+      // Persist meal allowance map as fallback
       await saveMealAllowance(data.id, data.employee_code, mealAllowance);
 
       logActivity('TAMBAH_KARYAWAN', `Menambahkan karyawan ${data.name} (${data.employee_code}) - Uang Makan: Rp ${mealAllowance.toLocaleString('id-ID')}`, `Kode: ${data.employee_code}`);
@@ -342,9 +343,11 @@ export const employeeAPI = {
 
   update: async (formData) => {
     try {
+      const mealAllowance = Number(formData.mealAllowance ?? formData.meal_allowance ?? 0);
       const payload = {
         name: formData.name?.trim(),
         hourly_rate: Number(formData.hourlyRate) || 10000,
+        meal_allowance: mealAllowance,
         status: formData.status || 'AKTIF',
         updated_at: new Date().toISOString(),
       };
@@ -366,7 +369,6 @@ export const employeeAPI = {
 
       if (error) throw error;
 
-      const mealAllowance = Number(formData.mealAllowance ?? formData.meal_allowance ?? 0);
       await saveMealAllowance(data.id, data.employee_code, mealAllowance);
 
       logActivity('UPDATE_KARYAWAN', `Memperbarui data karyawan ${data.name} (${data.employee_code}) - Uang Makan: Rp ${mealAllowance.toLocaleString('id-ID')}`, `Kode: ${data.employee_code}`);
@@ -533,6 +535,7 @@ export const attendanceAPI = {
         check_out: nowIso,
         total_minutes: diffMinutes,
         total_hours: totalHours,
+        meal_allowance: mealAllowance,
         total_pay: totalPay,
         status: 'SELESAI',
         updated_at: nowIso,
@@ -749,6 +752,7 @@ export const attendanceAPI = {
         check_out: checkOut && checkOut !== '-' ? makeIsoDateTime(recordDate, checkOut) : null,
         total_minutes: diffMinutes,
         total_hours: totalHours,
+        meal_allowance: mealAllowance,
         total_pay: totalPay,
         status: status,
         source: 'ADMIN',
