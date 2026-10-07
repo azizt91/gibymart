@@ -33,7 +33,7 @@ export default function EmployeesPage() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null); // null = Add mode, object = Edit mode
-  const [formData, setFormData] = useState({ employeeCode: '', name: '', hourlyRate: 10000, status: 'AKTIF', pin: '1234' });
+  const [formData, setFormData] = useState({ employeeCode: '', name: '', hourlyRate: 10000, mealAllowance: 0, status: 'AKTIF', pin: '1234' });
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -78,7 +78,7 @@ export default function EmployeesPage() {
   // Open Modal (Add or Edit)
   const handleOpenAddModal = () => {
     setEditingEmployee(null);
-    setFormData({ employeeCode: '', name: '', hourlyRate: 10000, status: 'AKTIF', pin: '1234' });
+    setFormData({ employeeCode: '', name: '', hourlyRate: 10000, mealAllowance: 0, status: 'AKTIF', pin: '1234' });
     setFormError('');
     setIsModalOpen(true);
   };
@@ -89,6 +89,7 @@ export default function EmployeesPage() {
       employeeCode: emp.employeeCode || '',
       name: emp.name,
       hourlyRate: emp.hourlyRate,
+      mealAllowance: emp.mealAllowance || 0,
       status: emp.status,
       pin: emp.pin || '1234'
     });
@@ -232,6 +233,7 @@ export default function EmployeesPage() {
                     <TableHeaderCell>ID</TableHeaderCell>
                     <TableHeaderCell>Nama Karyawan</TableHeaderCell>
                     <TableHeaderCell>Tarif / Jam</TableHeaderCell>
+                    <TableHeaderCell>Uang Makan / Hari</TableHeaderCell>
                     <TableHeaderCell>Status</TableHeaderCell>
                     <TableHeaderCell align="center">Aksi</TableHeaderCell>
                   </TableRow>
@@ -253,6 +255,9 @@ export default function EmployeesPage() {
                       </TableCell>
                       <TableCell className="font-bold text-emerald-700">
                         {formatRupiah(emp.hourlyRate)} / jam
+                      </TableCell>
+                      <TableCell className="font-bold text-amber-700">
+                        {formatRupiah(emp.mealAllowance || 0)} / hari
                       </TableCell>
                       <TableCell>
                         {emp.status === 'AKTIF' ? (
@@ -304,7 +309,7 @@ export default function EmployeesPage() {
                         {emp.name}
                       </h4>
                       <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 mt-1 inline-block">
-                        ID: {emp.id}
+                        ID: {emp.employeeCode || emp.id}
                       </span>
                     </div>
                     {emp.status === 'AKTIF' ? (
@@ -314,33 +319,39 @@ export default function EmployeesPage() {
                     )}
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <span className="text-slate-400 block text-[11px]">Tarif Per Jam:</span>
                       <strong className="text-emerald-700 font-bold text-sm">
                         {formatRupiah(emp.hourlyRate)} / jam
                       </strong>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        icon={Edit2}
-                        onClick={() => handleOpenEditModal(emp)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant={emp.status === 'AKTIF' ? 'secondary' : 'primary'}
-                        size="sm"
-                        icon={Power}
-                        onClick={() => setConfirmToggleData(emp)}
-                        className={emp.status === 'AKTIF' ? 'text-amber-600' : 'text-emerald-600'}
-                      >
-                        {emp.status === 'AKTIF' ? 'Nonaktifkan' : 'Aktifkan'}
-                      </Button>
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Uang Makan:</span>
+                      <strong className="text-amber-700 font-bold text-sm">
+                        {formatRupiah(emp.mealAllowance || 0)} / hari
+                      </strong>
                     </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={Edit2}
+                      onClick={() => handleOpenEditModal(emp)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant={emp.status === 'AKTIF' ? 'secondary' : 'primary'}
+                      size="sm"
+                      icon={Power}
+                      onClick={() => setConfirmToggleData(emp)}
+                      className={emp.status === 'AKTIF' ? 'text-amber-600' : 'text-emerald-600'}
+                    >
+                      {emp.status === 'AKTIF' ? 'Nonaktifkan' : 'Aktifkan'}
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -354,7 +365,7 @@ export default function EmployeesPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingEmployee ? 'Edit Data Karyawan' : 'Tambah Karyawan Baru'}
-        subtitle={editingEmployee ? `ID Karyawan: ${editingEmployee.id}` : 'Lengkapi informasi data karyawan di bawah ini'}
+        subtitle={editingEmployee ? `ID Karyawan: ${editingEmployee.employeeCode || editingEmployee.id}` : 'Lengkapi informasi data karyawan di bawah ini'}
         size="md"
         footer={
           <div className="flex items-center justify-end gap-3 w-full">
@@ -393,6 +404,15 @@ export default function EmployeesPage() {
             onChange={(e) => setFormData({ ...formData, hourlyRate: Number(e.target.value) })}
             helperText="Default tarif: Rp 10.000 / jam"
             isRequired
+          />
+
+          <Input
+            label="Uang Makan / Kehadiran (Rupiah)"
+            type="number"
+            placeholder="0"
+            value={formData.mealAllowance}
+            onChange={(e) => setFormData({ ...formData, mealAllowance: Number(e.target.value) })}
+            helperText="Otomatis diberikan setiap kali karyawan hadir/masuk kerja (misal: Rp 15.000)"
           />
 
           <Input

@@ -239,3 +239,15 @@ CREATE POLICY "Authenticated users can insert activity_logs"
     FOR INSERT
     TO authenticated
     WITH CHECK (true);
+
+-- ==============================================================================
+-- 10. MIGRATION: Uang Makan Otomatis Saat Kehadiran (Meal Allowance)
+-- ==============================================================================
+-- Kolom meal_allowance pada employees untuk menyimpan nominal per hari karyawan
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS meal_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0;
+COMMENT ON COLUMN public.employees.meal_allowance IS 'Nominal uang makan harian otomatis saat karyawan hadir/bekerja';
+
+-- Kolom meal_allowance pada attendance untuk pencatatan historis per hari
+ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS meal_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0;
+COMMENT ON COLUMN public.attendance.meal_allowance IS 'Nominal uang makan yang didapatkan pada tanggal absensi ini';
+

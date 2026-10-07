@@ -221,6 +221,9 @@ export default function EmployeeDashboardPage() {
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-white/10 border border-white/15 text-xs text-slate-200 font-medium">
                     Tarif: <strong className="text-emerald-300 font-bold">{formatRupiah(employee.hourlyRate)} / jam</strong>
                   </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-amber-400/20 border border-amber-300/30 text-xs text-amber-200 font-medium">
+                    Uang Makan: <strong className="text-amber-300 font-bold">{formatRupiah(summary?.mealAllowance ?? employee.mealAllowance ?? 0)} / hari</strong>
+                  </span>
                   {employee.employeeCode && (
                     <span className="text-[11px] font-mono text-blue-200 bg-accent-blue/25 px-2 py-0.5 rounded border border-blue-400/20">
                       Kode: {employee.employeeCode}
@@ -355,7 +358,9 @@ export default function EmployeeDashboardPage() {
               {isLoading ? '...' : formatRupiah(summary?.totalPay || 0)}
             </div>
             <p className="text-[11px] text-emerald-600/80 mt-1 font-medium">
-              Estimasi upah bersih bulan ini
+              {summary?.totalMealAllowance > 0
+                ? `Termasuk uang makan ${formatRupiah(summary.totalMealAllowance)} (${summary.daysPresent} hari)`
+                : 'Estimasi upah bersih bulan ini'}
             </p>
           </div>
 
@@ -411,7 +416,8 @@ export default function EmployeeDashboardPage() {
                       <th className="py-3 px-4">Jam Masuk</th>
                       <th className="py-3 px-4">Jam Pulang</th>
                       <th className="py-3 px-4">Durasi Kerja</th>
-                      <th className="py-3 px-4">Upah Harian</th>
+                      <th className="py-3 px-4">Uang Makan</th>
+                      <th className="py-3 px-4">Total Upah Harian</th>
                       <th className="py-3 px-4 text-center">Status</th>
                     </tr>
                   </thead>
@@ -432,6 +438,9 @@ export default function EmployeeDashboardPage() {
                           </td>
                           <td className="py-3.5 px-4 font-semibold text-slate-800">
                             {hours > 0 ? `${hours} jam ` : ''}{mins} menit
+                          </td>
+                          <td className="py-3.5 px-4 font-semibold text-amber-600">
+                            {row.mealAllowance ? formatRupiah(row.mealAllowance) : '-'}
                           </td>
                           <td className="py-3.5 px-4 font-bold font-mono text-emerald-600">
                             {formatRupiah(row.totalPay || 0)}
@@ -488,17 +497,29 @@ export default function EmployeeDashboardPage() {
                           <span className="text-slate-400 block text-[10px]">Jam Pulang</span>
                           <span className="font-mono font-bold text-slate-800">{row.checkOut || '-'}</span>
                         </div>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 text-xs">
-                        <div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
                           <span className="text-slate-400 block text-[10px]">Durasi</span>
                           <span className="font-semibold text-slate-700">
                             {hours > 0 ? `${hours}j ` : ''}{mins}m
                           </span>
                         </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
+                          <span className="text-slate-400 block text-[10px]">Uang Makan</span>
+                          <span className="font-semibold text-amber-600">
+                            {row.mealAllowance ? formatRupiah(row.mealAllowance) : '-'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 text-xs">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Upah Jam Kerja</span>
+                          <span className="font-semibold text-slate-700">
+                            {formatRupiah(row.workPay || 0)}
+                          </span>
+                        </div>
                         <div className="text-right">
-                          <span className="text-slate-400 block text-[10px]">Upah Harian</span>
+                          <span className="text-slate-400 block text-[10px]">Total Upah Harian</span>
                           <span className="font-mono font-bold text-emerald-600 text-sm">
                             {formatRupiah(row.totalPay || 0)}
                           </span>

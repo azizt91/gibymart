@@ -172,29 +172,75 @@ export const authAPI = {
   },
 };
 
+// Helper: get and save meal allowance map from settings
+export const getMealAllowanceMap = async () => {
+  try {
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'meal_allowance_map')
+      .maybeSingle();
+
+    if (data && data.value) {
+      return JSON.parse(data.value);
+    }
+  } catch (err) {
+    console.warn('[MealAllowance] Failed to read map:', err);
+  }
+  return {};
+};
+
+export const saveMealAllowance = async (employeeId, employeeCode, amount) => {
+  try {
+    const currentMap = await getMealAllowanceMap();
+    const val = Number(amount) || 0;
+    if (employeeId) currentMap[String(employeeId)] = val;
+    if (employeeCode) currentMap[String(employeeCode)] = val;
+    await supabase.from('settings').upsert({
+      key: 'meal_allowance_map',
+      value: JSON.stringify(currentMap),
+    }, { onConflict: 'key' });
+  } catch (err) {
+    console.warn('[MealAllowance] Failed to save allowance:', err);
+  }
+};
+
 // ============================================
 // EMPLOYEE API
 // ============================================
 export const employeeAPI = {
   getAll: async () => {
     try {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .order('created_at', { ascending: true });
+      const [empRes, mealMap] = await Promise.all([
+        supabase
+          .from('employees')
+          .select('*')
+          .order('created_at', { ascending: true }),
+        getMealAllowanceMap(),
+      ]);
 
-      if (error) throw error;
+      if (empRes.error) throw empRes.error;
 
-      const formatted = (data || []).map((emp) => ({
-        id: String(emp.id),
-        employeeCode: emp.employee_code || `K${String(emp.id).substring(0, 3)}`,
-        name: emp.name,
-        hourlyRate: Number(emp.hourly_rate) || 10000,
-        status: emp.status || 'AKTIF',
-        pin: emp.pin || '1234',
-        createdAt: emp.created_at,
-        updatedAt: emp.updated_at,
-      }));
+      const formatted = (empRes.data || []).map((emp) => {
+        const mealAllowance = Number(
+          mealMap[String(emp.id)] ??
+          mealMap[emp.employee_code] ??
+          emp.meal_allowance ??
+          0
+        );
+
+        return {
+          id: String(emp.id),
+          employeeCode: emp.employee_code || `K${String(emp.id).substring(0, 3)}`,
+          name: emp.name,
+          hourlyRate: Number(emp.hourly_rate) || 10000,
+          mealAllowance,
+          status: emp.status || 'AKTIF',
+          pin: emp.pin || '1234',
+          createdAt: emp.created_at,
+          updatedAt: emp.updated_at,
+        };
+      });
 
       return { success: true, data: formatted };
     } catch (err) {
@@ -205,18 +251,27 @@ export const employeeAPI = {
 
   getActive: async () => {
     try {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('id, employee_code, name')
-        .eq('status', 'AKTIF')
-        .order('name', { ascending: true });
+      const [empRes, mealMap] = await Promise.all([
+        supabase
+          .from('employees')
+          .select('id, employee_code, name, hourly_rate')
+          .eq('status', 'AKTIF')
+          .order('name', { ascending: true }),
+        getMealAllowanceMap(),
+      ]);
 
-      if (error) throw error;
+      if (empRes.error) throw empRes.error;
 
-      const formatted = (data || []).map((emp) => ({
+      const formatted = (empRes.data || []).map((emp) => ({
         id: String(emp.id),
         employeeCode: emp.employee_code || String(emp.id),
         name: emp.name,
+        hourlyRate: Number(emp.hourly_rate) || 10000,
+        mealAllowance: Number(
+          mealMap[String(emp.id)] ??
+          mealMap[emp.employee_code] ??
+          0
+        ),
       }));
 
       return { success: true, data: formatted };
@@ -239,6 +294,8 @@ export const employeeAPI = {
         code = code.trim().toUpperCase();
       }
 
+      const mealAllowance = Number(formData.mealAllowance) || 0;
+
       const payload = {
         employee_code: code,
         name: formData.name?.trim(),
@@ -259,7 +316,10 @@ export const employeeAPI = {
 
       if (error) throw error;
 
-      logActivity('TAMBAH_KARYAWAN', `Menambahkan karyawan ${data.name} (${data.employee_code})`, `Kode: ${data.employee_code}`);
+      // Persist meal allowance
+      await saveMealAllowance(data.id, data.employee_code, mealAllowance);
+
+      logActivity('TAMBAH_KARYAWAN', `Menambahkan karyawan ${data.name} (${data.employee_code}) - Uang Makan: Rp ${mealAllowance.toLocaleString('id-ID')}`, `Kode: ${data.employee_code}`);
 
       return {
         success: true,
@@ -268,6 +328,7 @@ export const employeeAPI = {
           employeeCode: data.employee_code,
           name: data.name,
           hourlyRate: Number(data.hourly_rate),
+          mealAllowance,
           status: data.status,
           pin: data.pin || '1234',
         },
@@ -305,7 +366,10 @@ export const employeeAPI = {
 
       if (error) throw error;
 
-      logActivity('UPDATE_KARYAWAN', `Memperbarui data karyawan ${data.name} (${data.employee_code})`, `Kode: ${data.employee_code}`);
+      const mealAllowance = Number(formData.mealAllowance ?? formData.meal_allowance ?? 0);
+      await saveMealAllowance(data.id, data.employee_code, mealAllowance);
+
+      logActivity('UPDATE_KARYAWAN', `Memperbarui data karyawan ${data.name} (${data.employee_code}) - Uang Makan: Rp ${mealAllowance.toLocaleString('id-ID')}`, `Kode: ${data.employee_code}`);
 
       return {
         success: true,
@@ -314,6 +378,7 @@ export const employeeAPI = {
           employeeCode: data.employee_code,
           name: data.name,
           hourlyRate: Number(data.hourly_rate),
+          mealAllowance,
           status: data.status,
           pin: data.pin || '1234',
         },
@@ -458,7 +523,11 @@ export const attendanceAPI = {
 
       const hourlyRate = Number(existing.hourly_rate) || 10000;
       const totalHours = Number((diffMinutes / 60).toFixed(2));
-      const totalPay = Math.round((diffMinutes / 60) * hourlyRate);
+      const workPay = Math.round((diffMinutes / 60) * hourlyRate);
+
+      const mealMap = await getMealAllowanceMap();
+      const mealAllowance = Number(mealMap[String(existing.employee_id)] ?? 0);
+      const totalPay = workPay + mealAllowance;
 
       const updatePayload = {
         check_out: nowIso,
@@ -483,6 +552,8 @@ export const attendanceAPI = {
           time: nowTime,
           totalMinutes: diffMinutes,
           totalHours,
+          workPay,
+          mealAllowance,
           estimatedPay: totalPay,
           status: 'HADIR',
         },
@@ -545,10 +616,14 @@ export const attendanceAPI = {
     try {
       const targetDate = date || getTodayDateString();
 
-      // Fetch employees to map employee_code
-      const { data: emps } = await supabase.from('employees').select('id, employee_code');
+      // Fetch employees to map employee_code and meal allowance
+      const [empsRes, mealMap] = await Promise.all([
+        supabase.from('employees').select('id, employee_code'),
+        getMealAllowanceMap(),
+      ]);
+
       const empCodeMap = {};
-      (emps || []).forEach((e) => {
+      (empsRes.data || []).forEach((e) => {
         empCodeMap[e.id] = e.employee_code || String(e.id);
       });
 
@@ -560,22 +635,26 @@ export const attendanceAPI = {
 
       if (error) throw error;
 
-      const formatted = (data || []).map((att) => ({
-        id: String(att.id),
-        employeeId: empCodeMap[att.employee_id] || String(att.employee_id),
-        employeeCode: empCodeMap[att.employee_id] || String(att.employee_id),
-        employeeName: att.employee_name,
-        date: att.attendance_date || att.date,
-        checkIn: formatTimeForDisplay(att.check_in),
-        checkOut: formatTimeForDisplay(att.check_out),
-        totalMinutes: Number(att.total_minutes) || 0,
-        totalHours: Number(att.total_hours) || 0,
-        hourlyRate: Number(att.hourly_rate) || 10000,
-        totalPay: Number(att.total_pay) || 0,
-        status: att.status,
-        source: att.source || 'SISTEM',
-        notes: att.notes || '',
-      }));
+      const formatted = (data || []).map((att) => {
+        const mealAllowance = Number(mealMap[String(att.employee_id)] ?? 0);
+        return {
+          id: String(att.id),
+          employeeId: empCodeMap[att.employee_id] || String(att.employee_id),
+          employeeCode: empCodeMap[att.employee_id] || String(att.employee_id),
+          employeeName: att.employee_name,
+          date: att.attendance_date || att.date,
+          checkIn: formatTimeForDisplay(att.check_in),
+          checkOut: formatTimeForDisplay(att.check_out),
+          totalMinutes: Number(att.total_minutes) || 0,
+          totalHours: Number(att.total_hours) || 0,
+          hourlyRate: Number(att.hourly_rate) || 10000,
+          mealAllowance,
+          totalPay: Number(att.total_pay) || 0,
+          status: att.status,
+          source: att.source || 'SISTEM',
+          notes: att.notes || '',
+        };
+      });
 
       return { success: true, data: formatted };
     } catch (err) {
@@ -590,9 +669,13 @@ export const attendanceAPI = {
       const y = String(year);
       const prefix = `${y}-${m}-`;
 
-      const { data: emps } = await supabase.from('employees').select('id, employee_code');
+      const [empsRes, mealMap] = await Promise.all([
+        supabase.from('employees').select('id, employee_code'),
+        getMealAllowanceMap(),
+      ]);
+
       const empCodeMap = {};
-      (emps || []).forEach((e) => {
+      (empsRes.data || []).forEach((e) => {
         empCodeMap[e.id] = e.employee_code || String(e.id);
       });
 
@@ -605,23 +688,27 @@ export const attendanceAPI = {
 
       if (error) throw error;
 
-      const formatted = (data || []).map((att) => ({
-        id: String(att.id),
-        employeeId: empCodeMap[att.employee_id] || String(att.employee_id),
-        employeeCode: empCodeMap[att.employee_id] || String(att.employee_id),
-        rawEmployeeId: String(att.employee_id),
-        employeeName: att.employee_name,
-        date: att.attendance_date || att.date,
-        checkIn: formatTimeForDisplay(att.check_in),
-        checkOut: formatTimeForDisplay(att.check_out),
-        totalMinutes: Number(att.total_minutes) || 0,
-        totalHours: Number(att.total_hours) || 0,
-        hourlyRate: Number(att.hourly_rate) || 10000,
-        totalPay: Number(att.total_pay) || 0,
-        status: att.status,
-        source: att.source || 'SISTEM',
-        notes: att.notes || '',
-      }));
+      const formatted = (data || []).map((att) => {
+        const mealAllowance = Number(mealMap[String(att.employee_id)] ?? 0);
+        return {
+          id: String(att.id),
+          employeeId: empCodeMap[att.employee_id] || String(att.employee_id),
+          employeeCode: empCodeMap[att.employee_id] || String(att.employee_id),
+          rawEmployeeId: String(att.employee_id),
+          employeeName: att.employee_name,
+          date: att.attendance_date || att.date,
+          checkIn: formatTimeForDisplay(att.check_in),
+          checkOut: formatTimeForDisplay(att.check_out),
+          totalMinutes: Number(att.total_minutes) || 0,
+          totalHours: Number(att.total_hours) || 0,
+          hourlyRate: Number(att.hourly_rate) || 10000,
+          mealAllowance,
+          totalPay: Number(att.total_pay) || 0,
+          status: att.status,
+          source: att.source || 'SISTEM',
+          notes: att.notes || '',
+        };
+      });
 
       return { success: true, data: formatted };
     } catch (err) {
@@ -640,7 +727,7 @@ export const attendanceAPI = {
       let diffMinutes = outMinutes > 0 ? outMinutes - inMinutes : 0;
       if (diffMinutes < 0) diffMinutes = 0;
 
-      // Fetch row to preserve hourly rate and date
+      // Fetch row to preserve hourly rate, employee_id, and date
       const { data: current } = await supabase
         .from('attendance')
         .select('*')
@@ -650,9 +737,12 @@ export const attendanceAPI = {
       const recordDate = current?.attendance_date || current?.date || getTodayDateString();
       const hourlyRate = current ? Number(current.hourly_rate) || 10000 : 10000;
       const totalHours = Number((diffMinutes / 60).toFixed(2));
-      const totalPay = Math.round((diffMinutes / 60) * hourlyRate);
+      const workPay = Math.round((diffMinutes / 60) * hourlyRate);
 
+      const mealMap = await getMealAllowanceMap();
+      const mealAllowance = Number(mealMap[String(current?.employee_id)] ?? 0);
       const status = checkOut && checkOut !== '-' ? 'SELESAI' : 'BEKERJA';
+      const totalPay = (diffMinutes > 0 || status === 'SELESAI') ? (workPay + mealAllowance) : workPay;
 
       const payload = {
         check_in: makeIsoDateTime(recordDate, checkIn),
@@ -701,13 +791,15 @@ export const dashboardAPI = {
     try {
       const today = getTodayDateString();
 
-      // 1. Fetch all employees
-      const { data: allEmployees } = await supabase
-        .from('employees')
-        .select('id, employee_code, name, status, hourly_rate');
+      // 1. Fetch all employees and meal allowances
+      const [empRes, mealMap] = await Promise.all([
+        supabase.from('employees').select('id, employee_code, name, status, hourly_rate'),
+        getMealAllowanceMap(),
+      ]);
 
+      const allEmployees = empRes.data || [];
       const empCodeMap = {};
-      (allEmployees || []).forEach((e) => {
+      allEmployees.forEach((e) => {
         empCodeMap[e.id] = e.employee_code || String(e.id);
       });
 
@@ -734,6 +826,7 @@ export const dashboardAPI = {
         totalMinutes: Number(att.total_minutes) || 0,
         totalHours: Number(att.total_hours) || 0,
         hourlyRate: Number(att.hourly_rate) || 10000,
+        mealAllowance: Number(mealMap[String(att.employee_id)] ?? 0),
         totalPay: Number(att.total_pay) || 0,
         status: att.status,
         source: att.source || 'SISTEM',
@@ -852,14 +945,15 @@ export const recapAPI = {
       const y = String(year);
       const prefix = `${y}-${m}-`;
 
-      // Fetch employees and attendance concurrently
-      const [empRes, attRes] = await Promise.all([
+      // Fetch employees, attendance, and meal allowance map concurrently
+      const [empRes, attRes, mealMap] = await Promise.all([
         supabase.from('employees').select('id, employee_code, name, hourly_rate, status').order('name'),
         supabase
           .from('attendance')
           .select('*')
           .gte('date', `${prefix}01`)
           .lte('date', `${prefix}31`),
+        getMealAllowanceMap(),
       ]);
 
       const employees = empRes.data || [];
@@ -869,6 +963,12 @@ export const recapAPI = {
       const recapMap = {};
       employees.forEach((emp) => {
         const code = emp.employee_code || `K${String(emp.id).substring(0, 3)}`;
+        const mealAllowance = Number(
+          mealMap[String(emp.id)] ??
+          mealMap[emp.employee_code] ??
+          0
+        );
+
         recapMap[String(emp.id)] = {
           rawId: String(emp.id),
           employeeId: code,
@@ -878,6 +978,9 @@ export const recapAPI = {
           totalMinutes: 0,
           totalHours: 0,
           hourlyRate: Number(emp.hourly_rate) || 10000,
+          mealAllowance: mealAllowance,
+          totalMealAllowance: 0,
+          totalWorkPay: 0,
           totalPay: 0,
           records: [],
         };
@@ -887,6 +990,7 @@ export const recapAPI = {
         const empId = String(att.employee_id);
         if (!recapMap[empId]) {
           const fallbackCode = `K${empId.substring(0, 3)}`;
+          const mealAllowance = Number(mealMap[empId] ?? 0);
           recapMap[empId] = {
             rawId: empId,
             employeeId: fallbackCode,
@@ -896,6 +1000,9 @@ export const recapAPI = {
             totalMinutes: 0,
             totalHours: 0,
             hourlyRate: Number(att.hourly_rate) || 10000,
+            mealAllowance: mealAllowance,
+            totalMealAllowance: 0,
+            totalWorkPay: 0,
             totalPay: 0,
             records: [],
           };
@@ -904,14 +1011,24 @@ export const recapAPI = {
         recapMap[empId].daysPresent += 1;
         recapMap[empId].totalMinutes += Number(att.total_minutes) || 0;
         recapMap[empId].totalHours += Number(att.total_hours) || 0;
-        recapMap[empId].totalPay += Number(att.total_pay) || 0;
         recapMap[empId].records.push(att);
       });
 
-      const recapList = Object.values(recapMap).map((item) => ({
-        ...item,
-        totalHours: Number(item.totalHours.toFixed(2)),
-      }));
+      const recapList = Object.values(recapMap).map((item) => {
+        const totalHours = Number(item.totalHours.toFixed(2));
+        const totalWorkPay = Math.round(totalHours * item.hourlyRate);
+        const totalMealAllowance = item.daysPresent * item.mealAllowance;
+        // Total Upah = Upah Jam Kerja + Total Uang Makan Hadir
+        const totalPay = item.daysPresent > 0 ? (totalWorkPay + totalMealAllowance) : 0;
+
+        return {
+          ...item,
+          totalHours,
+          totalWorkPay,
+          totalMealAllowance,
+          totalPay,
+        };
+      });
 
       return { success: true, data: recapList };
     } catch (err) {
@@ -1054,11 +1171,19 @@ export const employeeAuthAPI = {
         };
       }
 
+      const mealMap = await getMealAllowanceMap();
+      const mealAllowance = Number(
+        mealMap[String(emp.id)] ??
+        mealMap[emp.employee_code] ??
+        0
+      );
+
       const employeeSession = {
         id: String(emp.id),
         employeeCode: emp.employee_code || `K${String(emp.id).substring(0, 3)}`,
         name: emp.name,
         hourlyRate: Number(emp.hourly_rate) || 10000,
+        mealAllowance,
         status: emp.status,
         role: 'KARYAWAN',
       };
@@ -1095,21 +1220,35 @@ export const employeeAuthAPI = {
       const y = String(year);
       const prefix = `${y}-${m}-`;
 
-      const { data: records, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('employee_id', String(employeeId))
-        .gte('date', `${prefix}01`)
-        .lte('date', `${prefix}31`)
-        .order('date', { ascending: false });
+      const [recordsRes, empRes, mealMap] = await Promise.all([
+        supabase
+          .from('attendance')
+          .select('*')
+          .eq('employee_id', String(employeeId))
+          .gte('date', `${prefix}01`)
+          .lte('date', `${prefix}31`)
+          .order('date', { ascending: false }),
+        supabase
+          .from('employees')
+          .select('hourly_rate')
+          .eq('id', employeeId)
+          .maybeSingle(),
+        getMealAllowanceMap(),
+      ]);
 
-      if (error) throw error;
+      if (recordsRes.error) throw recordsRes.error;
 
-      const list = records || [];
+      const list = recordsRes.data || [];
+      const mealAllowance = Number(mealMap[String(employeeId)] ?? 0);
+      const hourlyRate = Number(empRes.data?.hourly_rate) || 10000;
+
       const totalMinutes = list.reduce((acc, r) => acc + (Number(r.total_minutes) || 0), 0);
       const totalHours = Number((totalMinutes / 60).toFixed(2));
-      const totalPay = list.reduce((acc, r) => acc + (Number(r.total_pay) || 0), 0);
-      const daysPresent = list.filter((r) => r.status === 'HADIR' || r.status === 'BEKERJA').length;
+      const daysPresent = list.filter((r) => r.status === 'HADIR' || r.status === 'BEKERJA' || (r.check_in && r.check_in !== '-')).length;
+
+      const totalWorkPay = Math.round(totalHours * hourlyRate);
+      const totalMealAllowance = daysPresent * mealAllowance;
+      const totalPay = daysPresent > 0 ? (totalWorkPay + totalMealAllowance) : 0;
 
       const hours = Math.floor(totalMinutes / 60);
       const mins = totalMinutes % 60;
@@ -1121,20 +1260,33 @@ export const employeeAuthAPI = {
           totalMinutes,
           totalHours,
           durationFormatted,
+          hourlyRate,
+          mealAllowance,
+          totalWorkPay,
+          totalMealAllowance,
           totalPay,
           daysPresent,
-          records: list.map((r) => ({
-            id: String(r.id),
-            date: r.date,
-            checkIn: formatTimeForDisplay(r.check_in),
-            checkOut: formatTimeForDisplay(r.check_out),
-            totalMinutes: Number(r.total_minutes) || 0,
-            totalHours: Number(r.total_hours) || 0,
-            hourlyRate: Number(r.hourly_rate) || 10000,
-            totalPay: Number(r.total_pay) || 0,
-            status: r.status,
-            notes: r.notes || '',
-          })),
+          records: list.map((r) => {
+            const recMins = Number(r.total_minutes) || 0;
+            const recHours = Number(r.total_hours) || Number((recMins / 60).toFixed(2));
+            const recWorkPay = Math.round(recHours * (Number(r.hourly_rate) || hourlyRate));
+            const recPay = recWorkPay + mealAllowance;
+
+            return {
+              id: String(r.id),
+              date: r.date,
+              checkIn: formatTimeForDisplay(r.check_in),
+              checkOut: formatTimeForDisplay(r.check_out),
+              totalMinutes: recMins,
+              totalHours: recHours,
+              hourlyRate: Number(r.hourly_rate) || hourlyRate,
+              mealAllowance: mealAllowance,
+              workPay: recWorkPay,
+              totalPay: recPay,
+              status: r.status,
+              notes: r.notes || '',
+            };
+          }),
         },
       };
     } catch (err) {

@@ -49,10 +49,11 @@ export default function DailyRecapPage() {
           acc.presentCount += 1;
         }
         acc.totalMinutes += item.totalMinutes || 0;
+        acc.totalMealAllowance += item.mealAllowance || 0;
         acc.totalPay += item.totalPay || 0;
         return acc;
       },
-      { presentCount: 0, totalMinutes: 0, totalPay: 0 }
+      { presentCount: 0, totalMinutes: 0, totalMealAllowance: 0, totalPay: 0 }
     );
   }, [dailyData]);
 
@@ -119,7 +120,7 @@ export default function DailyRecapPage() {
 
         {/* Table & Mobile Responsive View */}
         {isLoading ? (
-          <TableSkeleton rows={5} cols={8} />
+          <TableSkeleton rows={5} cols={9} />
         ) : !selectedDate ? (
           <EmptyState
             title="Silakan pilih tanggal"
@@ -144,6 +145,7 @@ export default function DailyRecapPage() {
                     <TableHeaderCell>Total Menit</TableHeaderCell>
                     <TableHeaderCell>Total Jam</TableHeaderCell>
                     <TableHeaderCell>Tarif / Jam</TableHeaderCell>
+                    <TableHeaderCell>Uang Makan</TableHeaderCell>
                     <TableHeaderCell>Total Upah Harian</TableHeaderCell>
                     <TableHeaderCell>Status</TableHeaderCell>
                   </TableRow>
@@ -163,6 +165,9 @@ export default function DailyRecapPage() {
                       <TableCell className="text-xs">{item.totalMinutes ? `${item.totalMinutes} m` : '-'}</TableCell>
                       <TableCell className="font-mono text-xs font-semibold">{item.totalHours ? `${item.totalHours} j` : '-'}</TableCell>
                       <TableCell className="text-xs text-slate-600">{formatRupiah(item.hourlyRate)}</TableCell>
+                      <TableCell className="text-xs font-semibold text-amber-700">
+                        {item.mealAllowance ? formatRupiah(item.mealAllowance) : '-'}
+                      </TableCell>
                       <TableCell className="font-bold text-emerald-700">
                         {item.totalPay ? formatRupiah(item.totalPay) : '-'}
                       </TableCell>
@@ -186,6 +191,9 @@ export default function DailyRecapPage() {
                     <TableCell className="font-mono text-xs">{totals.totalMinutes} m</TableCell>
                     <TableCell className="font-mono text-xs">{ (totals.totalMinutes / 60).toFixed(2) } j</TableCell>
                     <TableCell>-</TableCell>
+                    <TableCell className="font-semibold text-amber-700 text-xs">
+                      {formatRupiah(totals.totalMealAllowance)}
+                    </TableCell>
                     <TableCell className="text-emerald-700 text-base">
                       {formatRupiah(totals.totalPay)}
                     </TableCell>
@@ -237,10 +245,18 @@ export default function DailyRecapPage() {
                       <span className="text-slate-400 block text-[11px]">Tarif/Jam:</span>
                       <span className="text-slate-700">{formatRupiah(item.hourlyRate)}</span>
                     </div>
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Uang Makan:</span>
+                      <span className="text-amber-700 font-semibold">{formatRupiah(item.mealAllowance || 0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Upah Jam:</span>
+                      <span className="text-slate-700 font-medium">{formatRupiah(Math.max(0, (item.totalPay || 0) - (item.mealAllowance || 0)))}</span>
+                    </div>
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Upah Harian:</span>
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Total Upah Harian:</span>
                     <span className="text-base font-extrabold text-emerald-700">
                       {item.totalPay ? formatRupiah(item.totalPay) : '-'}
                     </span>

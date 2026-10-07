@@ -75,10 +75,11 @@ export default function MonthlyRecapPage() {
       (acc, item) => {
         acc.daysPresent += item.daysPresent || 0;
         acc.totalMinutes += item.totalMinutes || 0;
+        acc.totalMealAllowance += item.totalMealAllowance || 0;
         acc.totalPay += item.totalPay || 0;
         return acc;
       },
-      { daysPresent: 0, totalMinutes: 0, totalPay: 0 }
+      { daysPresent: 0, totalMinutes: 0, totalMealAllowance: 0, totalPay: 0 }
     );
   }, [recapData]);
 
@@ -99,6 +100,8 @@ export default function MonthlyRecapPage() {
       'Hari Hadir',
       'Total Jam Kerja',
       'Tarif / Jam (Rp)',
+      'Uang Makan / Hari (Rp)',
+      'Total Uang Makan (Rp)',
       'Total Upah (Rp)'
     ];
 
@@ -109,6 +112,8 @@ export default function MonthlyRecapPage() {
       item.daysPresent,
       `"${item.totalHours} Jam"`,
       item.hourlyRate,
+      item.mealAllowance || 0,
+      item.totalMealAllowance || 0,
       item.totalPay
     ]);
 
@@ -120,6 +125,8 @@ export default function MonthlyRecapPage() {
       totals.daysPresent,
       `"${Math.floor(totals.totalMinutes / 60)}j ${totals.totalMinutes % 60}m"`,
       '',
+      '',
+      totals.totalMealAllowance,
       totals.totalPay
     ]);
 
@@ -170,7 +177,7 @@ export default function MonthlyRecapPage() {
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Rekap Absensi Bulanan</h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Laporan total kehadiran, durasi jam kerja, dan perhitungan upah karyawan per bulan
+            Laporan total kehadiran, durasi jam kerja, uang makan, dan perhitungan upah karyawan per bulan
           </p>
         </div>
 
@@ -257,7 +264,7 @@ export default function MonthlyRecapPage() {
 
         {/* Table & Mobile Responsive View */}
         {isLoading ? (
-          <TableSkeleton rows={6} cols={7} />
+          <TableSkeleton rows={6} cols={9} />
         ) : recapData.length === 0 ? (
           <EmptyState
             title="Data Tidak Ditemukan"
@@ -275,6 +282,8 @@ export default function MonthlyRecapPage() {
                     <TableHeaderCell align="center">Hari Hadir</TableHeaderCell>
                     <TableHeaderCell>Total Jam Kerja</TableHeaderCell>
                     <TableHeaderCell>Tarif / Jam</TableHeaderCell>
+                    <TableHeaderCell>Uang Makan / Hari</TableHeaderCell>
+                    <TableHeaderCell>Total Uang Makan</TableHeaderCell>
                     <TableHeaderCell>Total Upah</TableHeaderCell>
                     <TableHeaderCell align="center">Detail</TableHeaderCell>
                   </TableRow>
@@ -297,6 +306,12 @@ export default function MonthlyRecapPage() {
                       </TableCell>
                       <TableCell className="text-xs font-medium text-slate-600">
                         {formatRupiah(item.hourlyRate)}
+                      </TableCell>
+                      <TableCell className="text-xs font-semibold text-amber-700">
+                        {formatRupiah(item.mealAllowance || 0)}
+                      </TableCell>
+                      <TableCell className="font-bold text-amber-700">
+                        {formatRupiah(item.totalMealAllowance || 0)}
                       </TableCell>
                       <TableCell className="font-bold text-emerald-700">
                         {formatRupiah(item.totalPay)}
@@ -325,6 +340,10 @@ export default function MonthlyRecapPage() {
                       {Math.floor(totals.totalMinutes / 60)}j {totals.totalMinutes % 60}m
                     </TableCell>
                     <TableCell>-</TableCell>
+                    <TableCell>-</TableCell>
+                    <TableCell className="font-bold text-amber-700 text-sm">
+                      {formatRupiah(totals.totalMealAllowance)}
+                    </TableCell>
                     <TableCell className="text-emerald-700 text-base font-black">
                       {formatRupiah(totals.totalPay)}
                     </TableCell>
@@ -334,7 +353,7 @@ export default function MonthlyRecapPage() {
               </Table>
             </div>
 
-            {/* Mobile Card Layout (Responsive - bukan sekadar mengecilkan tabel) */}
+            {/* Mobile Card Layout (Responsive) */}
             <div className="md:hidden space-y-3">
               {recapData.map((item) => (
                 <div
@@ -363,6 +382,14 @@ export default function MonthlyRecapPage() {
                     <div>
                       <span className="text-slate-400 block text-[11px]">Tarif / Jam:</span>
                       <span className="text-slate-700 font-medium">{formatRupiah(item.hourlyRate)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Uang Makan/Hari:</span>
+                      <span className="text-amber-700 font-semibold">{formatRupiah(item.mealAllowance || 0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Total Uang Makan:</span>
+                      <strong className="text-amber-700 font-bold">{formatRupiah(item.totalMealAllowance || 0)}</strong>
                     </div>
                   </div>
 
@@ -399,13 +426,17 @@ export default function MonthlyRecapPage() {
         size="lg"
       >
         <div className="space-y-4">
-          <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
+          <div className="p-3 bg-slate-50 rounded-xl grid grid-cols-3 gap-2 text-xs">
             <div>
-              <span className="text-text-muted">Total Hari Hadir: </span>
-              <strong className="text-text-dark">{detailEmployee?.daysPresent} Hari</strong>
+              <span className="text-slate-500 block text-[11px]">Total Kehadiran:</span>
+              <strong className="text-slate-800">{detailEmployee?.daysPresent} Hari</strong>
             </div>
             <div>
-              <span className="text-text-muted">Total Upah: </span>
+              <span className="text-slate-500 block text-[11px]">Total Uang Makan:</span>
+              <strong className="text-amber-700">{formatRupiah(detailEmployee?.totalMealAllowance || 0)}</strong>
+            </div>
+            <div>
+              <span className="text-slate-500 block text-[11px]">Total Upah:</span>
               <strong className="text-emerald-700 font-bold">
                 {detailEmployee?.totalPay ? formatRupiah(detailEmployee.totalPay) : '-'}
               </strong>
@@ -413,9 +444,9 @@ export default function MonthlyRecapPage() {
           </div>
 
           {isLoadingDetail ? (
-            <TableSkeleton rows={4} cols={5} />
+            <TableSkeleton rows={4} cols={6} />
           ) : detailRecords.length === 0 ? (
-            <p className="text-xs text-text-muted text-center py-6">Tidak ada rincian absensi harian.</p>
+            <p className="text-xs text-slate-400 text-center py-6">Tidak ada rincian absensi harian.</p>
           ) : (
             <Table>
               <TableHead>
@@ -424,6 +455,7 @@ export default function MonthlyRecapPage() {
                   <TableHeaderCell>Masuk</TableHeaderCell>
                   <TableHeaderCell>Pulang</TableHeaderCell>
                   <TableHeaderCell>Durasi</TableHeaderCell>
+                  <TableHeaderCell>Uang Makan</TableHeaderCell>
                   <TableHeaderCell>Upah Harian</TableHeaderCell>
                 </TableRow>
               </TableHead>
@@ -434,6 +466,9 @@ export default function MonthlyRecapPage() {
                     <TableCell className="font-mono text-xs">{r.checkIn || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.checkOut || '-'}</TableCell>
                     <TableCell className="text-xs">{r.totalHours ? `${r.totalHours} jam` : '-'}</TableCell>
+                    <TableCell className="text-xs font-semibold text-amber-700">
+                      {r.mealAllowance ? formatRupiah(r.mealAllowance) : '-'}
+                    </TableCell>
                     <TableCell className="font-semibold text-emerald-700 text-xs">
                       {r.totalPay ? formatRupiah(r.totalPay) : '-'}
                     </TableCell>
