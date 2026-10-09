@@ -13,6 +13,27 @@ import { format } from 'date-fns';
 const getTodayDateString = () => format(new Date(), 'yyyy-MM-dd');
 const getCurrentTimeString = () => format(new Date(), 'HH:mm:ss');
 
+/**
+ * Memeriksa apakah suatu catatan absensi sah dihitung sebagai kehadiran dan mendapat uang makan.
+ * Untuk hari ini: jika status BEKERJA atau check_in tercatat, sah (sedang bekerja aktif).
+ * Untuk tanggal lampau: harus sudah checkout / berstatus SELESAI/HADIR / memiliki jam kerja > 0 menit.
+ * Catatan tertinggal 0 menit tanpa checkout pada tanggal lampau tidak dianggap hadir.
+ */
+export const isAttendedRecord = (att, today = getTodayDateString()) => {
+  if (!att) return false;
+  const recordDate = att.attendance_date || att.date;
+  const isToday = recordDate === today;
+  const hasWorkedMinutes = (Number(att.total_minutes) || 0) > 0;
+  const hasCheckedOut = Boolean(att.check_out && att.check_out !== '-');
+  const isCompletedStatus = att.status === 'SELESAI' || att.status === 'HADIR' || att.status === 'DIUBAH';
+
+  if (isToday) {
+    return Boolean(att.check_in && att.check_in !== '-') || att.status === 'BEKERJA' || isCompletedStatus;
+  }
+
+  return isCompletedStatus || hasCheckedOut || hasWorkedMinutes;
+};
+
 export const formatTimeForDisplay = (val) => {
   if (!val || val === '-' || val === 'null' || val === 'undefined') return '-';
   if (typeof val === 'string') {
@@ -445,7 +466,15 @@ export const attendanceAPI = {
         };
       }
 
-      // 3. Insert record with proper timestamptz & attendance_date
+      // 3. Fetch meal allowance and insert record with proper timestamptz & attendance_date
+      const mealMap = await getMealAllowanceMap();
+      const mealAllowance = Number(
+        mealMap[String(emp.id)] ??
+        mealMap[emp.employee_code] ??
+        emp.meal_allowance ??
+        0
+      );
+
       const insertPayload = {
         employee_id: String(emp.id),
         employee_name: emp.name,
@@ -456,6 +485,7 @@ export const attendanceAPI = {
         status: 'BEKERJA',
         source: 'SISTEM',
         hourly_rate: Number(emp.hourly_rate) || 10000,
+        meal_allowance: mealAllowance,
         total_minutes: 0,
         total_hours: 0,
         total_pay: 0,
@@ -785,6 +815,36 @@ export const attendanceAPI = {
       return { success: false, message: err.message || 'Gagal mengoreksi data absensi.' };
     }
   },
+
+  delete: async (id) => {
+    try {
+      if (!id) throw new Error('ID absensi wajib disertakan.');
+
+      const { data: current } = await supabase
+        .from('attendance')
+        .select('id, employee_name, date, attendance_date')
+        .eq('id', id)
+        .maybeSingle();
+
+      const { error } = await supabase
+        .from('attendance')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      logActivity(
+        'HAPUS_ABSENSI',
+        `Menghapus data absensi ${current?.employee_name || ''} tanggal ${current?.attendance_date || current?.date || ''}`,
+        `ID: ${id}`
+      );
+
+      return { success: true, message: 'Data absensi berhasil dihapus.' };
+    } catch (err) {
+      console.error('[AttendanceAPI] delete error:', err);
+      return { success: false, message: err.message || 'Gagal menghapus data absensi.' };
+    }
+  },
 };
 
 // ============================================
@@ -990,6 +1050,7 @@ export const recapAPI = {
         };
       });
 
+      const today = getTodayDateString();
       records.forEach((att) => {
         const empId = String(att.employee_id);
         if (!recapMap[empId]) {
@@ -1012,7 +1073,10 @@ export const recapAPI = {
           };
         }
 
-        recapMap[empId].daysPresent += 1;
+        const isAttended = isAttendedRecord(att, today);
+        if (isAttended) {
+          recapMap[empId].daysPresent += 1;
+        }
         recapMap[empId].totalMinutes += Number(att.total_minutes) || 0;
         recapMap[empId].totalHours += Number(att.total_hours) || 0;
         recapMap[empId].records.push(att);
@@ -1248,7 +1312,9 @@ export const employeeAuthAPI = {
 
       const totalMinutes = list.reduce((acc, r) => acc + (Number(r.total_minutes) || 0), 0);
       const totalHours = Number((totalMinutes / 60).toFixed(2));
-      const daysPresent = list.filter((r) => r.status === 'HADIR' || r.status === 'BEKERJA' || (r.check_in && r.check_in !== '-')).length;
+      const today = getTodayDateString();
+      const validRecords = list.filter((r) => isAttendedRecord(r, today));
+      const daysPresent = validRecords.length;
 
       const totalWorkPay = Math.round(totalHours * hourlyRate);
       const totalMealAllowance = daysPresent * mealAllowance;
@@ -1274,7 +1340,9 @@ export const employeeAuthAPI = {
             const recMins = Number(r.total_minutes) || 0;
             const recHours = Number(r.total_hours) || Number((recMins / 60).toFixed(2));
             const recWorkPay = Math.round(recHours * (Number(r.hourly_rate) || hourlyRate));
-            const recPay = recWorkPay + mealAllowance;
+            const isAttended = isAttendedRecord(r, today);
+            const effectiveMealAllowance = isAttended ? (Number(r.meal_allowance) || mealAllowance) : 0;
+            const recPay = recWorkPay + effectiveMealAllowance;
 
             return {
               id: String(r.id),

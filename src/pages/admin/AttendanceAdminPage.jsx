@@ -17,6 +17,7 @@ import {
   Filter,
   Search,
   Edit,
+  Trash2,
   Clock,
   CheckCircle2,
   AlertCircle
@@ -43,6 +44,10 @@ export default function AttendanceAdminPage() {
   });
   const [correctionError, setCorrectionError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Delete modal state
+  const [deletingRecord, setDeletingRecord] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchInitialData();
@@ -110,6 +115,7 @@ export default function AttendanceAdminPage() {
 
       if (res.success) {
         toast.success(`Absensi ${editingRecord.employeeName} berhasil dikoreksi.`);
+        const updated = res.data;
         setRecords((prev) =>
           prev.map((item) =>
             item.id === editingRecord.id
@@ -117,12 +123,13 @@ export default function AttendanceAdminPage() {
                   ...item,
                   checkIn: correctionForm.checkIn,
                   checkOut: correctionForm.checkOut,
-                  status: 'HADIR',
+                  status: updated?.status || (correctionForm.checkOut && correctionForm.checkOut !== '-' ? 'SELESAI' : 'BEKERJA'),
                   source: 'ADMIN',
                   note: correctionForm.note,
-                  totalMinutes: 540,
-                  totalHours: 9.0,
-                  totalPay: 90000
+                  totalMinutes: updated?.total_minutes ?? item.totalMinutes,
+                  totalHours: updated?.total_hours ?? item.totalHours,
+                  totalPay: updated?.total_pay ?? item.totalPay,
+                  mealAllowance: updated?.meal_allowance ?? item.mealAllowance,
                 }
               : item
           )
@@ -135,6 +142,26 @@ export default function AttendanceAdminPage() {
       toast.error('Terjadi kesalahan koneksi.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Confirm delete
+  const handleConfirmDelete = async () => {
+    if (!deletingRecord) return;
+    setIsDeleting(true);
+    try {
+      const res = await attendanceAPI.delete(deletingRecord.id);
+      if (res.success) {
+        toast.success(`Absensi ${deletingRecord.employeeName} berhasil dihapus.`);
+        setRecords((prev) => prev.filter((r) => r.id !== deletingRecord.id));
+        setDeletingRecord(null);
+      } else {
+        toast.error(res.message || 'Gagal menghapus absensi.');
+      }
+    } catch (err) {
+      toast.error('Terjadi kesalahan koneksi.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -253,13 +280,23 @@ export default function AttendanceAdminPage() {
                         )}
                       </TableCell>
                       <TableCell align="center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={Edit}
-                          onClick={() => handleOpenCorrection(item)}
-                          title="Koreksi Jam Kerja"
-                        />
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={Edit}
+                            onClick={() => handleOpenCorrection(item)}
+                            title="Koreksi Jam Kerja"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={Trash2}
+                            className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                            onClick={() => setDeletingRecord(item)}
+                            title="Hapus Data Absensi"
+                          />
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -320,14 +357,23 @@ export default function AttendanceAdminPage() {
                       </span>
                     </div>
 
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={Edit}
-                      onClick={() => handleOpenCorrection(item)}
-                    >
-                      Koreksi
-                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={Edit}
+                        onClick={() => handleOpenCorrection(item)}
+                      >
+                        Koreksi
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        icon={Trash2}
+                        onClick={() => setDeletingRecord(item)}
+                        title="Hapus Data Absensi"
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -382,6 +428,35 @@ export default function AttendanceAdminPage() {
             isRequired
           />
         </form>
+      </Modal>
+
+      {/* Modal Konfirmasi Hapus Absensi */}
+      <Modal
+        isOpen={!!deletingRecord}
+        onClose={() => setDeletingRecord(null)}
+        title="Hapus Catatan Absensi"
+        subtitle={`Karyawan: ${deletingRecord?.employeeName} (${deletingRecord?.date || selectedDate})`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeletingRecord(null)} isDisabled={isDeleting}>
+              Batal
+            </Button>
+            <Button variant="danger" onClick={handleConfirmDelete} isLoading={isDeleting}>
+              Ya, Hapus Absensi
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 py-2 text-sm text-slate-600">
+          <p>
+            Apakah Anda yakin ingin menghapus catatan absensi untuk karyawan{' '}
+            <strong className="text-slate-900 font-bold">{deletingRecord?.employeeName}</strong> pada tanggal{' '}
+            <span className="font-mono text-slate-800">{deletingRecord?.date || selectedDate}</span>?
+          </p>
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">
+            ⚠️ Tindakan ini akan menghapus jam kerja dan kalkulasi uang makan hari tersebut dari seluruh laporan dan rekap.
+          </div>
+        </div>
       </Modal>
     </div>
   );
