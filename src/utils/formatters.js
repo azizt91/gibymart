@@ -120,6 +120,34 @@ export function formatTotalHours(totalMinutes) {
 }
 
 /**
+ * Menghitung jam kerja efektif/dibayar berdasarkan interval blok 30 menit ke bawah (Floor):
+ * - < 30 menit  -> 0 jam
+ * - 30 - 59 mnt -> 0.5 jam
+ * - 60 - 89 mnt -> 1.0 jam (misal 1 jam 22 mnt atau 1 jam 29 mnt)
+ * - 90 - 119 mnt-> 1.5 jam (misal 1 jam 30 mnt atau 1 jam 59 mnt)
+ * - 120- 149 mnt-> 2.0 jam
+ * @param {number} totalMinutes
+ * @returns {number} Jam kerja yang dibayar (kelipatan 0.5)
+ */
+export function calculatePaidHours(totalMinutes) {
+  const mins = Number(totalMinutes) || 0;
+  if (mins < 30) return 0;
+  return Math.floor(mins / 30) * 0.5;
+}
+
+/**
+ * Menghitung upah jam kerja dari jam dibayar dan tarif per jam
+ * @param {number} paidHours
+ * @param {number} hourlyRate
+ * @returns {number} Upah rupiah
+ */
+export function calculateWorkPay(paidHours, hourlyRate) {
+  const hours = Number(paidHours) || 0;
+  const rate = Number(hourlyRate) || 0;
+  return Math.round(hours * rate);
+}
+
+/**
  * Get current time in Jakarta timezone
  * @returns {Date}
  */

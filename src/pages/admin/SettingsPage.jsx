@@ -146,7 +146,7 @@ export default function SettingsPage() {
               <Select
                 label="Metode Kalkulasi Upah"
                 options={[
-                  { value: 'PER_JAM', label: 'Per Jam (Rupiah per jam / 60 menit)' },
+                  { value: 'PER_JAM', label: 'Per Jam (Blok 30 Menit ke Bawah — GIBY MART)' },
                   { value: 'FLAT_HARIAN', label: 'Flat Harian' },
                 ]}
                 value={settings.metode_upah}
@@ -161,6 +161,7 @@ export default function SettingsPage() {
               <Select
                 label="Pembulatan Menit Kerja"
                 options={[
+                  { value: '30', label: 'Blok 30 Menit ke Bawah (Standar Toko: 60-89m=1j, 90-119m=1.5j)' },
                   { value: '1', label: 'Tanpa Pembulatan (Presisi 1 Menit)' },
                   { value: '5', label: 'Pembulatan 5 Menit' },
                   { value: '15', label: 'Pembulatan 15 Menit' },

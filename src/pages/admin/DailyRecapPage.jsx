@@ -49,11 +49,12 @@ export default function DailyRecapPage() {
           acc.presentCount += 1;
         }
         acc.totalMinutes += item.totalMinutes || 0;
+        acc.totalHours = Number(((acc.totalHours || 0) + (item.totalHours || 0)).toFixed(1));
         acc.totalMealAllowance += item.mealAllowance || 0;
         acc.totalPay += item.totalPay || 0;
         return acc;
       },
-      { presentCount: 0, totalMinutes: 0, totalMealAllowance: 0, totalPay: 0 }
+      { presentCount: 0, totalMinutes: 0, totalHours: 0, totalMealAllowance: 0, totalPay: 0 }
     );
   }, [dailyData]);
 
@@ -100,7 +101,7 @@ export default function DailyRecapPage() {
             <div>
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Durasi Kerja</p>
               <p className="text-lg sm:text-xl font-black text-slate-800">
-                {(totals.totalMinutes / 60).toFixed(1)} <span className="text-xs font-semibold text-slate-500">Jam ({totals.totalMinutes} m)</span>
+                {totals.totalHours} <span className="text-xs font-semibold text-slate-500">Jam ({totals.totalMinutes} m)</span>
               </p>
             </div>
           </div>
@@ -189,7 +190,7 @@ export default function DailyRecapPage() {
                       TOTAL HARIAN:
                     </TableCell>
                     <TableCell className="font-mono text-xs">{totals.totalMinutes} m</TableCell>
-                    <TableCell className="font-mono text-xs">{ (totals.totalMinutes / 60).toFixed(2) } j</TableCell>
+                    <TableCell className="font-mono text-xs">{totals.totalHours} j</TableCell>
                     <TableCell>-</TableCell>
                     <TableCell className="font-semibold text-amber-700 text-xs">
                       {formatRupiah(totals.totalMealAllowance)}

@@ -75,11 +75,12 @@ export default function MonthlyRecapPage() {
       (acc, item) => {
         acc.daysPresent += item.daysPresent || 0;
         acc.totalMinutes += item.totalMinutes || 0;
+        acc.totalHours = Number(((acc.totalHours || 0) + (item.totalHours || 0)).toFixed(1));
         acc.totalMealAllowance += item.totalMealAllowance || 0;
         acc.totalPay += item.totalPay || 0;
         return acc;
       },
-      { daysPresent: 0, totalMinutes: 0, totalMealAllowance: 0, totalPay: 0 }
+      { daysPresent: 0, totalMinutes: 0, totalHours: 0, totalMealAllowance: 0, totalPay: 0 }
     );
   }, [recapData]);
 
@@ -242,9 +243,9 @@ export default function MonthlyRecapPage() {
               <Clock className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Jam Kerja</p>
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Jam Kerja Dibayar</p>
               <p className="text-lg sm:text-xl font-black text-slate-800">
-                {Math.floor(totals.totalMinutes / 60)}j {totals.totalMinutes % 60}m
+                {totals.totalHours || 0} Jam <span className="text-xs font-semibold text-slate-400">({Math.floor(totals.totalMinutes / 60)}j {totals.totalMinutes % 60}m)</span>
               </p>
             </div>
           </div>

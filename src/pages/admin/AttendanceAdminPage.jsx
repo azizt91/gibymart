@@ -258,7 +258,12 @@ export default function AttendanceAdminPage() {
                       <TableCell className="font-mono text-xs font-semibold">{item.checkIn || '-'}</TableCell>
                       <TableCell className="font-mono text-xs font-semibold">{item.checkOut || '-'}</TableCell>
                       <TableCell className="text-xs font-medium">
-                        {item.totalMinutes ? formatMinutesToHours(item.totalMinutes) : '-'}
+                        {item.totalMinutes ? (
+                          <div>
+                            <span>{formatMinutesToHours(item.totalMinutes)}</span>
+                            <span className="block text-[10px] text-slate-400 font-semibold">{item.totalHours || 0} jam dibayar</span>
+                          </div>
+                        ) : '-'}
                       </TableCell>
                       <TableCell className="font-bold text-emerald-700">
                         {item.totalPay ? formatRupiah(item.totalPay) : '-'}

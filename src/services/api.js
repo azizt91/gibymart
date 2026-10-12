@@ -6,6 +6,7 @@
 
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
+import { calculatePaidHours, calculateWorkPay } from '../utils/formatters';
 
 // ============================================
 // Helper: Helper Date and Time utilities
@@ -554,8 +555,9 @@ export const attendanceAPI = {
       if (diffMinutes < 0 || isNaN(diffMinutes)) diffMinutes = 0;
 
       const hourlyRate = Number(existing.hourly_rate) || 10000;
-      const totalHours = Number((diffMinutes / 60).toFixed(2));
-      const workPay = Math.round((diffMinutes / 60) * hourlyRate);
+      // Aturan Giby Mart: Kelipatan blok 30 menit ke bawah (Floor 30 minutes)
+      const paidHours = calculatePaidHours(diffMinutes);
+      const workPay = calculateWorkPay(paidHours, hourlyRate);
 
       const mealMap = await getMealAllowanceMap();
       const mealAllowance = Number(mealMap[String(existing.employee_id)] ?? 0);
@@ -564,7 +566,7 @@ export const attendanceAPI = {
       const updatePayload = {
         check_out: nowIso,
         total_minutes: diffMinutes,
-        total_hours: totalHours,
+        total_hours: paidHours,
         meal_allowance: mealAllowance,
         total_pay: totalPay,
         status: 'SELESAI',
@@ -584,13 +586,13 @@ export const attendanceAPI = {
           id: String(existing.id),
           time: nowTime,
           totalMinutes: diffMinutes,
-          totalHours,
+          totalHours: paidHours,
           workPay,
           mealAllowance,
           estimatedPay: totalPay,
           status: 'HADIR',
         },
-        message: `Absen pulang berhasil pada jam ${nowTime}. Total durasi: ${diffMinutes} menit.`,
+        message: `Absen pulang berhasil pada jam ${nowTime}. Total durasi: ${diffMinutes} menit (${paidHours} jam dihitung).`,
       };
     } catch (err) {
       console.error('[AttendanceAPI] checkOut error:', err);
@@ -670,6 +672,14 @@ export const attendanceAPI = {
 
       const formatted = (data || []).map((att) => {
         const mealAllowance = Number(mealMap[String(att.employee_id)] ?? 0);
+        const totalMinutes = Number(att.total_minutes) || 0;
+        const totalHours = calculatePaidHours(totalMinutes);
+        const hourlyRate = Number(att.hourly_rate) || 10000;
+        const workPay = calculateWorkPay(totalHours, hourlyRate);
+        const isAttended = att.status === 'HADIR' || att.status === 'SELESAI' || (att.check_out && att.check_out !== '-');
+        const effectiveMeal = isAttended ? mealAllowance : 0;
+        const totalPay = isAttended ? (workPay + effectiveMeal) : 0;
+
         return {
           id: String(att.id),
           employeeId: empCodeMap[att.employee_id] || String(att.employee_id),
@@ -678,11 +688,11 @@ export const attendanceAPI = {
           date: att.attendance_date || att.date,
           checkIn: formatTimeForDisplay(att.check_in),
           checkOut: formatTimeForDisplay(att.check_out),
-          totalMinutes: Number(att.total_minutes) || 0,
-          totalHours: Number(att.total_hours) || 0,
-          hourlyRate: Number(att.hourly_rate) || 10000,
+          totalMinutes,
+          totalHours,
+          hourlyRate,
           mealAllowance,
-          totalPay: Number(att.total_pay) || 0,
+          totalPay,
           status: att.status,
           source: att.source || 'SISTEM',
           notes: att.notes || '',
@@ -723,6 +733,14 @@ export const attendanceAPI = {
 
       const formatted = (data || []).map((att) => {
         const mealAllowance = Number(mealMap[String(att.employee_id)] ?? 0);
+        const totalMinutes = Number(att.total_minutes) || 0;
+        const totalHours = calculatePaidHours(totalMinutes);
+        const hourlyRate = Number(att.hourly_rate) || 10000;
+        const workPay = calculateWorkPay(totalHours, hourlyRate);
+        const isAttended = att.status === 'HADIR' || att.status === 'SELESAI' || (att.check_out && att.check_out !== '-');
+        const effectiveMeal = isAttended ? mealAllowance : 0;
+        const totalPay = isAttended ? (workPay + effectiveMeal) : 0;
+
         return {
           id: String(att.id),
           employeeId: empCodeMap[att.employee_id] || String(att.employee_id),
@@ -732,11 +750,11 @@ export const attendanceAPI = {
           date: att.attendance_date || att.date,
           checkIn: formatTimeForDisplay(att.check_in),
           checkOut: formatTimeForDisplay(att.check_out),
-          totalMinutes: Number(att.total_minutes) || 0,
-          totalHours: Number(att.total_hours) || 0,
-          hourlyRate: Number(att.hourly_rate) || 10000,
+          totalMinutes,
+          totalHours,
+          hourlyRate,
           mealAllowance,
-          totalPay: Number(att.total_pay) || 0,
+          totalPay,
           status: att.status,
           source: att.source || 'SISTEM',
           notes: att.notes || '',
@@ -769,8 +787,8 @@ export const attendanceAPI = {
 
       const recordDate = current?.attendance_date || current?.date || getTodayDateString();
       const hourlyRate = current ? Number(current.hourly_rate) || 10000 : 10000;
-      const totalHours = Number((diffMinutes / 60).toFixed(2));
-      const workPay = Math.round((diffMinutes / 60) * hourlyRate);
+      const paidHours = calculatePaidHours(diffMinutes);
+      const workPay = calculateWorkPay(paidHours, hourlyRate);
 
       const mealMap = await getMealAllowanceMap();
       const mealAllowance = Number(mealMap[String(current?.employee_id)] ?? 0);
@@ -781,7 +799,7 @@ export const attendanceAPI = {
         check_in: makeIsoDateTime(recordDate, checkIn),
         check_out: checkOut && checkOut !== '-' ? makeIsoDateTime(recordDate, checkOut) : null,
         total_minutes: diffMinutes,
-        total_hours: totalHours,
+        total_hours: paidHours,
         meal_allowance: mealAllowance,
         total_pay: totalPay,
         status: status,
@@ -1077,13 +1095,19 @@ export const recapAPI = {
         if (isAttended) {
           recapMap[empId].daysPresent += 1;
         }
-        recapMap[empId].totalMinutes += Number(att.total_minutes) || 0;
-        recapMap[empId].totalHours += Number(att.total_hours) || 0;
-        recapMap[empId].records.push(att);
+        const recMins = Number(att.total_minutes) || 0;
+        const recHours = calculatePaidHours(recMins);
+        recapMap[empId].totalMinutes += recMins;
+        recapMap[empId].totalHours += recHours;
+        recapMap[empId].records.push({
+          ...att,
+          total_minutes: recMins,
+          total_hours: recHours,
+        });
       });
 
       const recapList = Object.values(recapMap).map((item) => {
-        const totalHours = Number(item.totalHours.toFixed(2));
+        const totalHours = Number(item.totalHours.toFixed(1));
         const totalWorkPay = Math.round(totalHours * item.hourlyRate);
         const totalMealAllowance = item.daysPresent * item.mealAllowance;
         // Total Upah = Upah Jam Kerja + Total Uang Makan Hadir
@@ -1311,12 +1335,37 @@ export const employeeAuthAPI = {
       const hourlyRate = Number(empRes.data?.hourly_rate) || 10000;
 
       const totalMinutes = list.reduce((acc, r) => acc + (Number(r.total_minutes) || 0), 0);
-      const totalHours = Number((totalMinutes / 60).toFixed(2));
       const today = getTodayDateString();
       const validRecords = list.filter((r) => isAttendedRecord(r, today));
       const daysPresent = validRecords.length;
 
-      const totalWorkPay = Math.round(totalHours * hourlyRate);
+      const formattedRecords = list.map((r) => {
+        const recMins = Number(r.total_minutes) || 0;
+        const recHours = calculatePaidHours(recMins);
+        const recHourlyRate = Number(r.hourly_rate) || hourlyRate;
+        const recWorkPay = calculateWorkPay(recHours, recHourlyRate);
+        const isAttended = isAttendedRecord(r, today);
+        const effectiveMealAllowance = isAttended ? (Number(r.meal_allowance) || mealAllowance) : 0;
+        const recPay = recWorkPay + effectiveMealAllowance;
+
+        return {
+          id: String(r.id),
+          date: r.date,
+          checkIn: formatTimeForDisplay(r.check_in),
+          checkOut: formatTimeForDisplay(r.check_out),
+          totalMinutes: recMins,
+          totalHours: recHours,
+          hourlyRate: recHourlyRate,
+          mealAllowance: mealAllowance,
+          workPay: recWorkPay,
+          totalPay: recPay,
+          status: r.status,
+          notes: r.notes || '',
+        };
+      });
+
+      const totalPaidHours = Number(formattedRecords.reduce((acc, r) => acc + r.totalHours, 0).toFixed(1));
+      const totalWorkPay = Math.round(totalPaidHours * hourlyRate);
       const totalMealAllowance = daysPresent * mealAllowance;
       const totalPay = daysPresent > 0 ? (totalWorkPay + totalMealAllowance) : 0;
 
@@ -1328,7 +1377,7 @@ export const employeeAuthAPI = {
         success: true,
         data: {
           totalMinutes,
-          totalHours,
+          totalHours: totalPaidHours,
           durationFormatted,
           hourlyRate,
           mealAllowance,
@@ -1336,29 +1385,7 @@ export const employeeAuthAPI = {
           totalMealAllowance,
           totalPay,
           daysPresent,
-          records: list.map((r) => {
-            const recMins = Number(r.total_minutes) || 0;
-            const recHours = Number(r.total_hours) || Number((recMins / 60).toFixed(2));
-            const recWorkPay = Math.round(recHours * (Number(r.hourly_rate) || hourlyRate));
-            const isAttended = isAttendedRecord(r, today);
-            const effectiveMealAllowance = isAttended ? (Number(r.meal_allowance) || mealAllowance) : 0;
-            const recPay = recWorkPay + effectiveMealAllowance;
-
-            return {
-              id: String(r.id),
-              date: r.date,
-              checkIn: formatTimeForDisplay(r.check_in),
-              checkOut: formatTimeForDisplay(r.check_out),
-              totalMinutes: recMins,
-              totalHours: recHours,
-              hourlyRate: Number(r.hourly_rate) || hourlyRate,
-              mealAllowance: mealAllowance,
-              workPay: recWorkPay,
-              totalPay: recPay,
-              status: r.status,
-              notes: r.notes || '',
-            };
-          }),
+          records: formattedRecords,
         },
       };
     } catch (err) {

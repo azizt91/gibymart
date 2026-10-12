@@ -339,8 +339,8 @@ export default function EmployeeDashboardPage() {
             <div className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight font-mono">
               {isLoading ? '...' : summary?.durationFormatted || '0 Jam 0 Menit'}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1 font-medium">
-              Bulan {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+            <p className="text-[11px] text-slate-500 mt-1 font-medium">
+              {summary?.totalHours || 0} Jam dibayar ({summary?.durationFormatted || '0 Jam 0 Menit'} riil)
             </p>
           </div>
 
@@ -437,7 +437,10 @@ export default function EmployeeDashboardPage() {
                             {row.checkOut || '-'}
                           </td>
                           <td className="py-3.5 px-4 font-semibold text-slate-800">
-                            {hours > 0 ? `${hours} jam ` : ''}{mins} menit
+                            <div>{hours > 0 ? `${hours} jam ` : ''}{mins} menit</div>
+                            <span className="block text-[11px] font-medium text-emerald-600">
+                              {row.totalHours || 0} jam dibayar
+                            </span>
                           </td>
                           <td className="py-3.5 px-4 font-semibold text-amber-600">
                             {row.mealAllowance ? formatRupiah(row.mealAllowance) : '-'}
@@ -501,6 +504,9 @@ export default function EmployeeDashboardPage() {
                           <span className="text-slate-400 block text-[10px]">Durasi</span>
                           <span className="font-semibold text-slate-700">
                             {hours > 0 ? `${hours}j ` : ''}{mins}m
+                          </span>
+                          <span className="block text-[10px] text-emerald-600 font-medium">
+                            {row.totalHours || 0}j dibayar
                           </span>
                         </div>
                         <div className="bg-white p-2 rounded-lg border border-slate-200/60">
