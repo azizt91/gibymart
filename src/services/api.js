@@ -895,14 +895,14 @@ export const dashboardAPI = {
       const { data: todayAtt } = await supabase
         .from('attendance')
         .select('*')
-        .eq('date', today);
+        .or(`attendance_date.eq.${today},date.eq.${today}`);
 
       const todayList = (todayAtt || []).map((att) => ({
         id: String(att.id),
         employeeId: empCodeMap[att.employee_id] || String(att.employee_id),
         employeeCode: empCodeMap[att.employee_id] || String(att.employee_id),
         employeeName: att.employee_name,
-        date: att.date,
+        date: att.attendance_date || att.date || today,
         checkIn: formatTimeForDisplay(att.check_in),
         checkOut: formatTimeForDisplay(att.check_out),
         totalMinutes: Number(att.total_minutes) || 0,
@@ -932,11 +932,11 @@ export const dashboardAPI = {
 
       const { data: monthAtt } = await supabase
         .from('attendance')
-        .select('date, total_minutes, total_pay, status')
+        .select('date, attendance_date, total_minutes, total_pay, status')
         .gte('date', `${monthPrefix}01`)
         .lte('date', `${monthPrefix}31`);
 
-      const uniqueDays = new Set((monthAtt || []).map((a) => a.date)).size;
+      const uniqueDays = new Set((monthAtt || []).map((a) => a.attendance_date || a.date)).size;
       const sumMinutes = (monthAtt || []).reduce((acc, a) => acc + (Number(a.total_minutes) || 0), 0);
       const sumPay = (monthAtt || []).reduce((acc, a) => acc + (Number(a.total_pay) || 0), 0);
 

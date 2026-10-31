@@ -1,5 +1,5 @@
 // GIBY MART — Service Worker for PWA
-const CACHE_NAME = 'giby-mart-pwa-v1';
+const CACHE_NAME = 'giby-mart-pwa-v2';
 
 const STATIC_ASSETS = [
   '/',
@@ -34,15 +34,18 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch: Network-first with cache fallback for app shell, NEVER cache Google Apps Script API
+// Fetch: Network-first with cache fallback for app shell, NEVER cache Supabase or Google APIs
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. Never cache Google Apps Script API requests or POST requests
+  // 1. Never cache Supabase API, WebSockets, or backend API requests
   if (
     event.request.method !== 'GET' ||
+    url.hostname.includes('supabase.co') ||
     url.hostname.includes('script.google.com') ||
-    url.hostname.includes('script.googleusercontent.com')
+    url.hostname.includes('script.googleusercontent.com') ||
+    url.protocol === 'ws:' ||
+    url.protocol === 'wss:'
   ) {
     return; // Pass through to standard browser network fetch
   }

@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { recapAPI, attendanceAPI } from '../../services/api';
 import useToast from '../../hooks/useToast';
+import useRealtimeAttendance from '../../hooks/useRealtimeAttendance';
+import PullToRefresh from '../../components/ui/PullToRefresh';
 import ContentCard from '../../components/ui/Card';
 import Table, { TableHead, TableBody, TableRow, TableHeaderCell, TableCell } from '../../components/ui/Table';
 import Badge from '../../components/ui/Badge';
@@ -10,7 +12,8 @@ import Modal from '../../components/ui/Modal';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import EmptyState from '../../components/ui/EmptyState';
 import { formatRupiah } from '../../utils/formatters';
-import { Download, Calendar, FileText, Eye, CalendarCheck, Clock, DollarSign, User } from 'lucide-react';
+import { generateMonthlyReportPDF } from '../../utils/generateMonthlyReportPDF';
+import { Download, Calendar, FileDown, Eye, CalendarCheck, Clock, DollarSign, Printer } from 'lucide-react';
 
 const MONTH_OPTIONS = [
   { value: '1', label: 'Januari' },
@@ -43,31 +46,36 @@ export default function MonthlyRecapPage() {
   const [selectedYear, setSelectedYear] = useState(() => String(new Date().getFullYear()));
   const [recapData, setRecapData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // Detail Modal State
   const [detailEmployee, setDetailEmployee] = useState(null);
   const [detailRecords, setDetailRecords] = useState([]);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isExportingSinglePDF, setIsExportingSinglePDF] = useState(false);
 
-  useEffect(() => {
-    fetchMonthlyRecap();
-  }, [selectedMonth, selectedYear]);
-
-  const fetchMonthlyRecap = async () => {
-    setIsLoading(true);
+  const fetchMonthlyRecap = async (isSilent = false) => {
+    if (!isSilent) setIsLoading(true);
     try {
       const res = await recapAPI.getMonthly(selectedMonth, selectedYear);
       if (res.success) {
         setRecapData(res.data || []);
       } else {
-        toast.error('Gagal memuat rekap bulanan.');
+        if (!isSilent) toast.error('Gagal memuat rekap bulanan.');
       }
-    } catch (err) {
-      toast.error('Terjadi kesalahan koneksi.');
+    } catch {
+      if (!isSilent) toast.error('Terjadi kesalahan koneksi.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchMonthlyRecap();
+  }, [selectedMonth, selectedYear]);
+
+  // Hubungkan ke Supabase Realtime
+  useRealtimeAttendance(() => fetchMonthlyRecap(true));
 
   // Calculate Totals
   const totals = useMemo(() => {
@@ -83,6 +91,58 @@ export default function MonthlyRecapPage() {
       { daysPresent: 0, totalMinutes: 0, totalHours: 0, totalMealAllowance: 0, totalPay: 0 }
     );
   }, [recapData]);
+
+  // Export PDF Handler (Lengkap dengan Rincian Absensi Harian Per Karyawan)
+  const handleExportPDF = async () => {
+    if (recapData.length === 0) {
+      toast.warning('Tidak ada data rekap untuk diexport.');
+      return;
+    }
+
+    setIsExportingPDF(true);
+    try {
+      const attRes = await attendanceAPI.getMonthly(selectedMonth, selectedYear);
+      const allDailyRecords = attRes.success ? (attRes.data || []) : [];
+
+      const res = await generateMonthlyReportPDF({
+        recapData,
+        allDailyRecords,
+        selectedMonth,
+        selectedYear,
+        storeName: 'GIBY MART',
+        totals,
+      });
+
+      toast.success(`File PDF "${res.filename}" berhasil didownload!`);
+    } catch (err) {
+      console.error('[ExportPDF] Error:', err);
+      toast.error(`Gagal membuat file PDF: ${err.message || 'Terjadi kesalahan sistem'}`);
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
+  // Export Single Employee PDF Handler (Dari Modal Detail)
+  const handleExportSingleEmployeePDF = async () => {
+    if (!detailEmployee) return;
+
+    setIsExportingSinglePDF(true);
+    try {
+      const res = await generateMonthlyReportPDF({
+        recapData: [detailEmployee],
+        allDailyRecords: detailRecords,
+        selectedMonth,
+        selectedYear,
+        storeName: 'GIBY MART',
+      });
+      toast.success(`File PDF rincian "${detailEmployee.employeeName}" (${res.filename}) berhasil didownload!`);
+    } catch (err) {
+      console.error('[ExportSinglePDF] Error:', err);
+      toast.error(`Gagal membuat PDF rincian karyawan: ${err.message || 'Terjadi kesalahan'}`);
+    } finally {
+      setIsExportingSinglePDF(false);
+    }
+  };
 
   // Export CSV Handler
   const handleExportCSV = () => {
@@ -172,235 +232,258 @@ export default function MonthlyRecapPage() {
   const monthLabel = MONTH_OPTIONS.find((m) => m.value === selectedMonth)?.label;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Rekap Absensi Bulanan</h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Laporan total kehadiran, durasi jam kerja, uang makan, dan perhitungan upah karyawan per bulan
-          </p>
-        </div>
-
-        <Button
-          variant="success"
-          icon={Download}
-          onClick={handleExportCSV}
-          isDisabled={isLoading || recapData.length === 0}
-          className="shadow-sm"
-        >
-          Export CSV
-        </Button>
-      </div>
-
-      {/* Main Content Card */}
-      <ContentCard>
-        {/* Filters Bar */}
-        <div className="flex flex-wrap items-end gap-3 sm:gap-4 mb-6 p-3 sm:p-4 bg-slate-50/70 border border-slate-200/70 rounded-xl">
-          <div className="w-40 sm:w-48">
-            <Select
-              label="Pilih Bulan"
-              options={MONTH_OPTIONS}
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              icon={Calendar}
-            />
-          </div>
-
-          <div className="w-32 sm:w-36">
-            <Select
-              label="Pilih Tahun"
-              options={YEAR_OPTIONS}
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              icon={Calendar}
-            />
-          </div>
-
+    <PullToRefresh onRefresh={() => fetchMonthlyRecap(true)}>
+      <div className="space-y-6 animate-fade-in">
+        {/* Header Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <Button variant="secondary" onClick={fetchMonthlyRecap} isLoading={isLoading}>
-              Tampilkan
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Rekap Absensi Bulanan</h2>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Realtime
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+              Laporan total kehadiran, durasi jam kerja, uang makan, dan perhitungan upah karyawan per bulan
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Tombol Utama Export PDF */}
+            <Button
+              variant="danger"
+              icon={FileDown}
+              onClick={handleExportPDF}
+              isLoading={isExportingPDF}
+              isDisabled={isLoading || recapData.length === 0}
+              className="shadow-sm font-semibold"
+            >
+              Export PDF
+            </Button>
+
+            {/* Tombol Sekunder Export CSV */}
+            <Button
+              variant="secondary"
+              icon={Download}
+              onClick={handleExportCSV}
+              isDisabled={isLoading || recapData.length === 0}
+              className="shadow-sm"
+              title="Export ke format spreadsheet CSV"
+            >
+              CSV
             </Button>
           </div>
         </div>
 
-        {/* Summary Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
-          <div className="p-3.5 sm:p-4 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-accent-blue text-white flex items-center justify-center shrink-0">
-              <CalendarCheck className="w-5 h-5" />
+        {/* Main Content Card */}
+        <ContentCard>
+          {/* Filters Bar */}
+          <div className="flex flex-wrap items-end gap-3 sm:gap-4 mb-6 p-3 sm:p-4 bg-slate-50/70 border border-slate-200/70 rounded-xl">
+            <div className="w-40 sm:w-48">
+              <Select
+                label="Pilih Bulan"
+                options={MONTH_OPTIONS}
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                icon={Calendar}
+              />
             </div>
+
+            <div className="w-32 sm:w-36">
+              <Select
+                label="Pilih Tahun"
+                options={YEAR_OPTIONS}
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                icon={Calendar}
+              />
+            </div>
+
             <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Hari Hadir</p>
-              <p className="text-lg sm:text-xl font-black text-slate-800">
-                {totals.daysPresent} <span className="text-xs font-semibold text-slate-500">Hari</span>
-              </p>
+              <Button variant="secondary" onClick={() => fetchMonthlyRecap(false)} isLoading={isLoading}>
+                Tampilkan
+              </Button>
             </div>
           </div>
 
-          <div className="p-3.5 sm:p-4 bg-amber-50/70 border border-amber-200/70 rounded-xl flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
-              <Clock className="w-5 h-5" />
+          {/* Summary Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
+            <div className="p-3.5 sm:p-4 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-accent-blue text-white flex items-center justify-center shrink-0">
+                <CalendarCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Hari Hadir</p>
+                <p className="text-lg sm:text-xl font-black text-slate-800">
+                  {totals.daysPresent} <span className="text-xs font-semibold text-slate-500">Hari</span>
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Jam Kerja Dibayar</p>
-              <p className="text-lg sm:text-xl font-black text-slate-800">
-                {totals.totalHours || 0} Jam <span className="text-xs font-semibold text-slate-400">({Math.floor(totals.totalMinutes / 60)}j {totals.totalMinutes % 60}m)</span>
-              </p>
+
+            <div className="p-3.5 sm:p-4 bg-amber-50/70 border border-amber-200/70 rounded-xl flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Jam Kerja Dibayar</p>
+                <p className="text-lg sm:text-xl font-black text-slate-800">
+                  {totals.totalHours || 0} Jam <span className="text-xs font-semibold text-slate-400">({Math.floor(totals.totalMinutes / 60)}j {totals.totalMinutes % 60}m)</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 sm:p-4 bg-emerald-50/70 border border-emerald-200/70 rounded-xl flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Upah Bulanan</p>
+                <p className="text-lg sm:text-xl font-black text-emerald-700 truncate" title={formatRupiah(totals.totalPay)}>
+                  {formatRupiah(totals.totalPay)}
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="p-3.5 sm:p-4 bg-emerald-50/70 border border-emerald-200/70 rounded-xl flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-              <DollarSign className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Upah Bulanan</p>
-              <p className="text-lg sm:text-xl font-black text-emerald-700 truncate" title={formatRupiah(totals.totalPay)}>
-                {formatRupiah(totals.totalPay)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Table & Mobile Responsive View */}
-        {isLoading ? (
-          <TableSkeleton rows={6} cols={9} />
-        ) : recapData.length === 0 ? (
-          <EmptyState
-            title="Data Tidak Ditemukan"
-            description={`Belum ada rekap absensi untuk periode ${monthLabel} ${selectedYear}.`}
-          />
-        ) : (
-          <>
-            {/* Desktop Table View */}
-            <div className="hidden md:block">
-              <Table>
-                <TableHead>
-                  <TableRow hover={false}>
-                    <TableHeaderCell>No</TableHeaderCell>
-                    <TableHeaderCell>Nama Karyawan</TableHeaderCell>
-                    <TableHeaderCell align="center">Hari Hadir</TableHeaderCell>
-                    <TableHeaderCell>Total Jam Kerja</TableHeaderCell>
-                    <TableHeaderCell>Tarif / Jam</TableHeaderCell>
-                    <TableHeaderCell>Uang Makan / Hari</TableHeaderCell>
-                    <TableHeaderCell>Total Uang Makan</TableHeaderCell>
-                    <TableHeaderCell>Total Upah</TableHeaderCell>
-                    <TableHeaderCell align="center">Detail</TableHeaderCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {recapData.map((item, idx) => (
-                    <TableRow key={item.rawId || item.employeeId || idx}>
-                      <TableCell className="text-slate-500 font-medium">{idx + 1}</TableCell>
-                      <TableCell className="font-bold text-slate-800">
-                        <div>{item.employeeName}</div>
-                        <div className="text-[11px] font-mono font-medium text-slate-400 mt-0.5">
-                          Kode: {item.employeeCode || item.employeeId}
-                        </div>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Badge variant="blue" size="md">{item.daysPresent} Hari</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs font-semibold text-slate-700">
-                        {item.totalHours} Jam
-                      </TableCell>
-                      <TableCell className="text-xs font-medium text-slate-600">
-                        {formatRupiah(item.hourlyRate)}
-                      </TableCell>
-                      <TableCell className="text-xs font-semibold text-amber-700">
-                        {formatRupiah(item.mealAllowance || 0)}
-                      </TableCell>
-                      <TableCell className="font-bold text-amber-700">
-                        {formatRupiah(item.totalMealAllowance || 0)}
-                      </TableCell>
-                      <TableCell className="font-bold text-emerald-700">
-                        {formatRupiah(item.totalPay)}
-                      </TableCell>
-                      <TableCell align="center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={Eye}
-                          onClick={() => handleOpenDetail(item)}
-                          title="Lihat Detail Harian"
-                        />
-                      </TableCell>
+          {/* Table & Mobile Responsive View */}
+          {isLoading ? (
+            <TableSkeleton rows={6} cols={9} />
+          ) : recapData.length === 0 ? (
+            <EmptyState
+              title="Data Tidak Ditemukan"
+              description={`Belum ada rekap absensi untuk periode ${monthLabel} ${selectedYear}.`}
+            />
+          ) : (
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHead>
+                    <TableRow hover={false}>
+                      <TableHeaderCell>No</TableHeaderCell>
+                      <TableHeaderCell>Nama Karyawan</TableHeaderCell>
+                      <TableHeaderCell align="center">Hari Hadir</TableHeaderCell>
+                      <TableHeaderCell>Total Jam Kerja</TableHeaderCell>
+                      <TableHeaderCell>Tarif / Jam</TableHeaderCell>
+                      <TableHeaderCell>Uang Makan / Hari</TableHeaderCell>
+                      <TableHeaderCell>Total Uang Makan</TableHeaderCell>
+                      <TableHeaderCell>Total Upah</TableHeaderCell>
+                      <TableHeaderCell align="center">Detail</TableHeaderCell>
                     </TableRow>
-                  ))}
+                  </TableHead>
+                  <TableBody>
+                    {recapData.map((item, idx) => (
+                      <TableRow key={item.rawId || item.employeeId || idx}>
+                        <TableCell className="text-slate-500 font-medium">{idx + 1}</TableCell>
+                        <TableCell className="font-bold text-slate-800">
+                          <div>{item.employeeName}</div>
+                          <div className="text-[11px] font-mono font-medium text-slate-400 mt-0.5">
+                            Kode: {item.employeeCode || item.employeeId}
+                          </div>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Badge variant="blue" size="md">{item.daysPresent} Hari</Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-semibold text-slate-700">
+                          {item.totalHours} Jam
+                        </TableCell>
+                        <TableCell className="text-xs font-medium text-slate-600">
+                          {formatRupiah(item.hourlyRate)}
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-amber-700">
+                          {formatRupiah(item.mealAllowance || 0)}
+                        </TableCell>
+                        <TableCell className="font-bold text-amber-700">
+                          {formatRupiah(item.totalMealAllowance || 0)}
+                        </TableCell>
+                        <TableCell className="font-bold text-emerald-700">
+                          {formatRupiah(item.totalPay)}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={Eye}
+                            onClick={() => handleOpenDetail(item)}
+                            title="Lihat Detail Harian"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
 
-                  {/* Total Row */}
-                  <TableRow hover={false} className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                    <TableCell colSpan={2} className="text-right uppercase tracking-wider text-xs font-bold text-slate-700">
-                      TOTAL KESELURUHAN:
-                    </TableCell>
-                    <TableCell align="center" className="text-accent-blue font-bold">
-                      {totals.daysPresent} Hari
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-slate-800 font-bold">
-                      {Math.floor(totals.totalMinutes / 60)}j {totals.totalMinutes % 60}m
-                    </TableCell>
-                    <TableCell>-</TableCell>
-                    <TableCell>-</TableCell>
-                    <TableCell className="font-bold text-amber-700 text-sm">
-                      {formatRupiah(totals.totalMealAllowance)}
-                    </TableCell>
-                    <TableCell className="text-emerald-700 text-base font-black">
-                      {formatRupiah(totals.totalPay)}
-                    </TableCell>
-                    <TableCell>-</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
+                    {/* Total Row */}
+                    <TableRow hover={false} className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                      <TableCell colSpan={2} className="text-right uppercase tracking-wider text-xs font-bold text-slate-700">
+                        TOTAL KESELURUHAN:
+                      </TableCell>
+                      <TableCell align="center" className="text-accent-blue font-bold">
+                        {totals.daysPresent} Hari
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-slate-800 font-bold">
+                        {Math.floor(totals.totalMinutes / 60)}j {totals.totalMinutes % 60}m
+                      </TableCell>
+                      <TableCell>-</TableCell>
+                      <TableCell>-</TableCell>
+                      <TableCell className="font-bold text-amber-700 text-sm">
+                        {formatRupiah(totals.totalMealAllowance)}
+                      </TableCell>
+                      <TableCell className="text-emerald-700 text-base font-black">
+                        {formatRupiah(totals.totalPay)}
+                      </TableCell>
+                      <TableCell>-</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
 
-            {/* Mobile Card Layout (Responsive) */}
-            <div className="md:hidden space-y-3">
-              {recapData.map((item) => (
-                <div
-                  key={item.rawId || item.employeeId}
-                  className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h4 className="font-extrabold text-slate-800 text-sm leading-tight">
-                        {item.employeeName}
-                      </h4>
-                      <p className="text-xs font-mono font-medium text-slate-400 mt-0.5">
-                        Kode: {item.employeeCode || item.employeeId}
-                      </p>
+              {/* Mobile Card Layout (Responsive) */}
+              <div className="md:hidden space-y-3">
+                {recapData.map((item) => (
+                  <div
+                    key={item.rawId || item.employeeId}
+                    className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-sm leading-tight">
+                          {item.employeeName}
+                        </h4>
+                        <p className="text-xs font-mono font-medium text-slate-400 mt-0.5">
+                          Kode: {item.employeeCode || item.employeeId}
+                        </p>
+                      </div>
+                      <Badge variant="blue" size="sm">
+                        {item.daysPresent} Hari Hadir
+                      </Badge>
                     </div>
-                    <Badge variant="blue" size="sm">
-                      {item.daysPresent} Hari Hadir
-                    </Badge>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Total Jam Kerja:</span>
-                      <strong className="text-slate-700 font-mono">{item.totalHours} Jam</strong>
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Total Jam Kerja:</span>
+                        <strong className="text-slate-700 font-mono">{item.totalHours} Jam</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Tarif / Jam:</span>
+                        <span className="text-slate-700 font-medium">{formatRupiah(item.hourlyRate)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Uang Makan/Hari:</span>
+                        <span className="text-amber-700 font-semibold">{formatRupiah(item.mealAllowance || 0)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Total Uang Makan:</span>
+                        <strong className="text-amber-700 font-bold">{formatRupiah(item.totalMealAllowance || 0)}</strong>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Tarif / Jam:</span>
-                      <span className="text-slate-700 font-medium">{formatRupiah(item.hourlyRate)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Uang Makan/Hari:</span>
-                      <span className="text-amber-700 font-semibold">{formatRupiah(item.mealAllowance || 0)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Total Uang Makan:</span>
-                      <strong className="text-amber-700 font-bold">{formatRupiah(item.totalMealAllowance || 0)}</strong>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Total Upah:</span>
-                      <span className="text-base font-extrabold text-emerald-700">
-                        {formatRupiah(item.totalPay)}
-                      </span>
-                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <div>
+                        <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Total Upah:</span>
+                        <span className="text-base font-extrabold text-emerald-700">
+                          {formatRupiah(item.totalPay)}
+                        </span>
+                      </div>
 
                     <Button
                       variant="secondary"
@@ -444,6 +527,24 @@ export default function MonthlyRecapPage() {
             </div>
           </div>
 
+          {/* Action Bar Modal: Tombol Cetak PDF Personal */}
+          <div className="flex justify-between items-center px-1">
+            <span className="text-xs font-semibold text-slate-500">
+              Daftar Rekaman Kehadiran Harian ({detailRecords.length} Catatan):
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={Printer}
+              onClick={handleExportSingleEmployeePDF}
+              isLoading={isExportingSinglePDF}
+              isDisabled={isLoadingDetail || detailRecords.length === 0}
+              className="text-xs"
+            >
+              Export Slip PDF
+            </Button>
+          </div>
+
           {isLoadingDetail ? (
             <TableSkeleton rows={4} cols={6} />
           ) : detailRecords.length === 0 ? (
@@ -481,5 +582,6 @@ export default function MonthlyRecapPage() {
         </div>
       </Modal>
     </div>
+  </PullToRefresh>
   );
 }
